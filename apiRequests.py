@@ -30,13 +30,25 @@ def get_id_of_closest_sensor(lat, lon, measurand):
 
 
 def get_last_value(sensor_id):
-    link = 'https://www.opensense.network/progprak/beta/api/v1.0/sensors/' + sensor_id + '/values'
+    link = "https://www.opensense.network/progprak/beta/api/v1.0/sensors/{0}/values".format(sensor_id)
     r = requests.get(link)
     data = r.json()
     last_index = len(data['values']) - 1
     return data['values'][last_index]['numberValue']
 
-# def get_measurand_from_sensor():
+
+def get_measurand_id_from_sensor(sensor_id):
+    link = "https://www.opensense.network/progprak/beta/api/v1.0/sensors/{0}".format(sensor_id)
+    r = requests.get(link)
+    data = r.json()
+    return data['measurandId']
 
 
-print(get_last_value('43759'))
+def get_measurand_name_from_measurand_id(measurand_id):
+    link = "https://www.opensense.network/progprak/beta/api/v1.0/measurands/{0}".format(measurand_id)
+    r = requests.get(link)
+    data = r.json()
+    return data['name']
+
+
+print(get_measurand_name_from_measurand_id( get_measurand_id_from_sensor(43759)))
