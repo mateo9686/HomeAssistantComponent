@@ -10,5 +10,5 @@ open_sense:
     password: <password>
     latitude: <latitude>
     longitude: <longitude>
-    measurands: <comma separated list of measurands> or all if you want to get all of them
+    measurands: <comma separated list of measurands or all if you want to get all of them> 
 ```
