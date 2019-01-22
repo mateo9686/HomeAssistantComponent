@@ -45,6 +45,12 @@ def setup(hass, config):
         _LOGGER.error("OpenSense login failed.")
         return False"""
 
+    set_states_for_given_measurands(measurands, lat, lon, hass)
+
+    return True
+
+
+def set_states_for_given_measurands(measurands, lat, lon, hass):
     measurands = measurands.replace(" ", "").split(',')
 
     for measurand in measurands:
@@ -52,8 +58,6 @@ def setup(hass, config):
         sensor_id = get_id_of_closest_sensor(lat, lon, measurand_id)
         value = get_last_value(sensor_id)
         hass.states.set("openSense.{0}".format(measurand), value)
-
-    return True
 
 
 def find_closest_sensor(data, lat, lon):
@@ -71,15 +75,17 @@ def find_closest_sensor(data, lat, lon):
     return sensor_id
 
 
-def get_id_of_closest_sensor(lat, lon, measurand):
+def get_id_of_closest_sensor(lat, lon, measurand_id):
     dist = 5
     data = []
     while len(data) == 0:
         link = "https://www.opensense.network/progprak/beta/api/v1.0/sensors?measurandId={0}&refPoint={1}, {2}&maxDistance={3}" \
-            .format(measurand, lat, lon, dist)
+            .format(measurand_id, lat, lon, dist)
         r = requests.get(link)
         data = r.json()
         dist *= 10
+    if len(data) == 1:
+        return data[0]['id']
     return find_closest_sensor(data, lat, lon)
 
 
@@ -88,6 +94,8 @@ def get_last_value(sensor_id):
     r = requests.get(link)
     data = r.json()
     last_index = len(data['values']) - 1
+    if last_index == -1:
+        return ""
     return data['values'][last_index]['numberValue']
 
 
@@ -178,3 +186,8 @@ def post_value_to_sensor(sensor_id, value, timestamp=-1):
 
     r = requests.post(link, headers=headers, json=json_data)
     return r.status_code
+
+
+print(get_measurand_id_from_measurand_name("pm10"))
+
+print(get_id_of_closest_sensor(52.507334, 13.332367, 11))
