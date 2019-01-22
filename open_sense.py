@@ -15,13 +15,15 @@ CONF_USERNAME = "username"
 CONF_PASSWORD = "password"
 CONF_LAT = "latitude"
 CONF_LON = "longitude"
+CONF_MEASURANDS = "measurands"
 
 CONFIG_SCHEMA = vol.Schema({
     DOMAIN: vol.Schema({
-        vol.Required(CONF_USERNAME): cv.string,
-        vol.Required(CONF_PASSWORD): cv.string,
-        vol.Required(CONF_LAT): cv.string,
-        vol.Required(CONF_LON): cv.string,
+        vol.Optional(CONF_USERNAME): cv.string,
+        vol.Optional(CONF_PASSWORD): cv.string,
+        vol.Required(CONF_LAT): cv.latitude,
+        vol.Required(CONF_LON): cv.longitude,
+        vol.Required(CONF_MEASURANDS): cv.string,
     }),
 }, extra=vol.ALLOW_EXTRA)
 
@@ -35,6 +37,7 @@ def setup(hass, config):
     password = config.get(CONF_PASSWORD)
     lat = config.get(CONF_LAT)
     lon = config.get(CONF_LON)
+    measurands = config.get(CONF_MEASURANDS)
 
     # Attempt to login
     """api_key = get_api_key()
@@ -42,12 +45,13 @@ def setup(hass, config):
         _LOGGER.error("OpenSense login failed.")
         return False"""
 
-    """sensor_id = get_id_of_closest_sensor(lat, lon, 1)
-    value = get_last_value(sensor_id)
-    hass.states.set("openSense.temperature", str(value))"""
-    sensor_id = get_id_of_closest_sensor(lat, lon, 1)
-    value = get_last_value(sensor_id)
-    hass.states.set("openSense.temperature", value)
+    measurands = measurands.replace(" ", "").split(',')
+
+    for measurand in measurands:
+        measurand_id = get_measurand_id_from_measurand_name(measurand)
+        sensor_id = get_id_of_closest_sensor(lat, lon, measurand_id)
+        value = get_last_value(sensor_id)
+        hass.states.set("openSense.{0}".format(measurand), value)
 
     return True
 
@@ -99,6 +103,13 @@ def get_measurand_name_from_measurand_id(measurand_id):
     r = requests.get(link)
     data = r.json()
     return data['name']
+
+
+def get_measurand_id_from_measurand_name(measurand_name):
+    link = "https://www.opensense.network/progprak/beta/api/v1.0/measurands?name={0}".format(measurand_name)
+    r = requests.get(link)
+    data = r.json()
+    return data[0]['id']
 
 
 def create_sensor(measurand_id, unit_id, lat, lon, license_id, altitude_above_ground, direction_vertical,
