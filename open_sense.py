@@ -58,8 +58,11 @@ def set_states_for_given_measurands(measurands, lat, lon, hass):
     for measurand in measurands:
         measurand_id = get_measurand_id_from_measurand_name(measurand)
         sensor_id = get_id_of_closest_sensor(lat, lon, measurand_id)
-        value = get_last_value(sensor_id)
-        hass.states.set("openSense.{0}".format(measurand), value)
+        if sensor_id == -1:
+            hass.states.set("openSense.{0}".format(measurand), "no sensors")
+        else:
+            value = get_last_value(sensor_id)
+            hass.states.set("openSense.{0}".format(measurand), "%.2f" % value)
 
 
 def set_states_for_all_measurands(lat, lon, hass):
@@ -75,7 +78,7 @@ def set_states_for_all_measurands(lat, lon, hass):
             hass.states.set("openSense.{0}".format(measurand), "no sensors")
         else:
             value = get_last_value(sensor_id)
-            hass.states.set("openSense.{0}".format(measurand), value)
+            hass.states.set("openSense.{0}".format(measurand), "%.2f" % value)
 
 
 def find_closest_sensor(data, lat, lon):
@@ -88,24 +91,31 @@ def find_closest_sensor(data, lat, lon):
         location2 = (j_lat, j_lon)
         dist = geopy.distance.geodesic(location, location2).m
         if dist < min_dist:
-            min_dist = dist
-            sensor_id = json['id']
+            if get_last_value(json['id']) is not None:
+                min_dist = dist
+                sensor_id = json['id']
     return sensor_id
 
 
 def get_id_of_closest_sensor(lat, lon, measurand_id):
-    dist = 5
+    dist = 100
     data = []
-    while len(data) == 0 and dist < 51000:
+    while (len(data) <= 1 or len(data) > 15)  and dist < 51000:
         link = "https://www.opensense.network/progprak/beta/api/v1.0/sensors?measurandId={0}&refPoint={1}, {2}&maxDistance={3}" \
             .format(measurand_id, lat, lon, dist)
         r = requests.get(link)
         data = r.json()
-        dist *= 10
+        if len(data) == 1:
+            if get_last_value(data[0]['id']) is not None:
+                return data[0]['id']
+        if len(data) > 15:
+            dist = dist / 2 + 100
+        else:
+            dist *= 2
     if len(data) == 0:
         return -1
     if len(data) == 1:
-        return data[0]['id']
+        return -1
     return find_closest_sensor(data, lat, lon)
 
 
@@ -115,7 +125,7 @@ def get_last_value(sensor_id):
     data = r.json()
     last_index = len(data['values']) - 1
     if last_index == -1:
-        return "no values"
+        return None
     return data['values'][last_index]['numberValue']
 
 
@@ -207,3 +217,6 @@ def post_value_to_sensor(sensor_id, value, timestamp=-1):
     r = requests.post(link, headers=headers, json=json_data)
     return r.status_code
 
+
+print(get_id_of_closest_sensor(52.507334, 13.332367, 11))
+print(get_last_value(26422))
