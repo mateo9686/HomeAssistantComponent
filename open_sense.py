@@ -216,6 +216,3 @@ def post_value_to_sensor(sensor_id, value, timestamp=-1):
     r = requests.post(link, headers=headers, json=json_data)
     return r.status_code
 
-
-print(get_id_of_closest_sensor(52.507334, 13.332367, 11))
-print(get_last_value(26422))
