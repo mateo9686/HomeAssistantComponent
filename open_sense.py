@@ -1,4 +1,6 @@
 import logging
+import math
+
 import voluptuous as vol
 import homeassistant.helpers.config_validation as cv
 import requests
@@ -100,7 +102,7 @@ def find_closest_sensor(data, lat, lon):
 def get_id_of_closest_sensor(lat, lon, measurand_id):
     dist = 100
     data = []
-    while (len(data) <= 1 or len(data) > 15)  and dist < 51000:
+    while len(data) <= 1 and dist < 10000:
         link = "https://www.opensense.network/progprak/beta/api/v1.0/sensors?measurandId={0}&refPoint={1}, {2}&maxDistance={3}" \
             .format(measurand_id, lat, lon, dist)
         r = requests.get(link)
@@ -108,10 +110,7 @@ def get_id_of_closest_sensor(lat, lon, measurand_id):
         if len(data) == 1:
             if get_last_value(data[0]['id']) is not None:
                 return data[0]['id']
-        if len(data) > 15:
-            dist = dist / 2 + 100
-        else:
-            dist *= 2
+        dist += 200
     if len(data) == 0:
         return -1
     if len(data) == 1:
