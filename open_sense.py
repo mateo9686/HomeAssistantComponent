@@ -63,8 +63,8 @@ def set_states_for_given_measurands(measurands, lat, lon, hass):
         if sensor_id == -1:
             hass.states.set("openSense.{0}".format(measurand), "no sensors")
         else:
-            value = get_last_value(sensor_id)
-            hass.states.set("openSense.{0}".format(measurand), "%.2f" % value)
+            value, unit = get_last_value(sensor_id)
+            hass.states.set("openSense.{0}".format(measurand), "%.2f" % value + " {0}".format(unit))
 
 
 def set_states_for_all_measurands(lat, lon, hass):
@@ -79,8 +79,8 @@ def set_states_for_all_measurands(lat, lon, hass):
         if sensor_id == -1:
             hass.states.set("openSense.{0}".format(measurand), "no sensors")
         else:
-            value = get_last_value(sensor_id)
-            hass.states.set("openSense.{0}".format(measurand), "%.2f" % value)
+            value, unit = get_last_value(sensor_id)
+            hass.states.set("openSense.{0}".format(measurand), "%.2f" % value + " {0}".format(unit))
 
 
 def find_closest_sensor(data, lat, lon):
@@ -93,7 +93,7 @@ def find_closest_sensor(data, lat, lon):
         location2 = (j_lat, j_lon)
         dist = geopy.distance.geodesic(location, location2).m
         if dist < min_dist:
-            if get_last_value(json['id']) is not None:
+            if get_last_value(json['id'])[0] is not None:
                 min_dist = dist
                 sensor_id = json['id']
     return sensor_id
@@ -108,7 +108,7 @@ def get_id_of_closest_sensor(lat, lon, measurand_id):
         r = requests.get(link)
         data = r.json()
         if len(data) == 1:
-            if get_last_value(data[0]['id']) is not None:
+            if get_last_value(data[0]['id'])[0] is not None:
                 return data[0]['id']
         dist += 200
     if len(data) == 0:
@@ -124,8 +124,8 @@ def get_last_value(sensor_id):
     data = r.json()
     last_index = len(data['values']) - 1
     if last_index == -1:
-        return None
-    return data['values'][last_index]['numberValue']
+        return None, None
+    return data['values'][last_index]['numberValue'], get_unit_name(data['unitId'])
 
 
 def get_measurand_id_from_sensor(sensor_id):
@@ -194,6 +194,13 @@ def get_api_key(username="smarthome", password="8KO9koE+"):
     return r.json()['id']
 
 
+def get_unit_name(unit_id):
+    link = "https://www.opensense.network/progprak/beta/api/v1.0/units/{0}".format(unit_id)
+    r = requests.get(link)
+    data = r.json()
+    return data['name']
+
+
 def post_value_to_sensor(sensor_id, value, timestamp=-1):
     link = "https://www.opensense.network/progprak/beta/api/v1.0/sensors/addValue"
     if timestamp == -1:
@@ -215,4 +222,3 @@ def post_value_to_sensor(sensor_id, value, timestamp=-1):
 
     r = requests.post(link, headers=headers, json=json_data)
     return r.status_code
-
