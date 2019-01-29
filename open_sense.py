@@ -54,6 +54,66 @@ def setup(hass, config):
     return True
 
 
+class Sensor:
+
+    def __init__(self, id):
+        """Initialize the sensor"""
+        self.id = id
+        link = "https://www.opensense.network/progprak/beta/api/v1.0/sensors/{0}".format(id)
+        r = requests.get(link)
+        data = r.json()
+        self.name = data['name']
+        self.measurand = data['measurand']
+        self.latitude = data['location']['lat']
+        self.longitude = data['location']['lng']
+        self.altitude_above_ground = data['altitudeAboveGround']
+        self.sensor_model = data['sensorModel']
+        self.accuracy = data['accuracy']
+        self.attribution_text = data['attributionText']
+        self.value = get_last_value(id)
+
+
+    @property
+    def get_name(self):
+        return self.name
+
+    @property
+    def get_id(self):
+        return self.id
+
+    @property
+    def get_measurand(self):
+        return self.measurand
+
+    @property
+    def get_value(self):
+        return self.value
+
+    @property
+    def get_latitude(self):
+        return self.latitude
+
+    @property
+    def get_longitude(self):
+        return self.longitude
+
+    @property
+    def get_altitude_above_ground(self):
+        return self.altitude_above_ground
+
+    @property
+    def get_sensor_model(self):
+        return self.sensor_model
+
+    @property
+    def get_accuracy(self):
+        return self.accuracy
+
+    @property
+    def get_attribution_text(self):
+        return self.attribution_text
+
+
 def set_states_for_given_measurands(measurands, lat, lon, hass):
     measurands = measurands.replace(" ", "").split(',')
 
