@@ -282,3 +282,33 @@ def post_value_to_sensor(sensor_id, value, timestamp=-1):
 
     r = requests.post(link, headers=headers, json=json_data)
     return r.status_code
+
+
+def collapsed_post_to_sensor(sensor_id, values, timestamps):
+    link = "https://www.opensense.network/progprak/beta/api/v1.0/sensors/addMultipleValues"
+
+    collapsed_messages = []
+
+    for i in range(len(values)):
+        json_value = \
+        {
+            "sensorId": sensor_id,
+            "timestamp": timestamps[i],
+            "numberValue": values[i]
+        }
+        collapsed_messages.append(json_value)
+
+    message = \
+    {
+        "collapsedMessages": collapsed_messages
+    }
+
+    headers = \
+    {
+        "Content-Type": "application/json",
+        "Accept": "application/json",
+        "Authorization": get_api_key()
+    }
+
+    r = requests.post(link, headers=headers, json=message)
+    return r.status_code
