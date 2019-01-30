@@ -72,14 +72,6 @@ class Sensor:
             self.attribution_text = ""
             self.value = "no sensors near"
             self.unit = ""
-            self.attributes = {
-                "friendly name": "OpenSense.{0}".format(self.measurand),
-                "position": "{0}; {1}".format(self.get_latitude, self.get_longitude),
-                "sensor model": self.get_sensor_model,
-                "altitude above ground": self.get_altitude_above_ground,
-                "accuracy": self.get_accuracy,
-                "attribution text": self.get_attribution_text
-            }
         else:
             link = "https://www.opensense.network/progprak/beta/api/v1.0/sensors/{0}".format(id)
             r = requests.get(link)
@@ -92,15 +84,15 @@ class Sensor:
             self.accuracy = data['accuracy']
             self.attribution_text = data['attributionText']
             self.value, self.unit = get_last_value(id)
-            self.attributes = {
-                "friendly name": "OpenSense.{0}".format(self.measurand),
-                "id": self.id,
-                "position": "{0}; {1}".format(self.get_latitude, self.get_longitude),
-                "sensor model": self.get_sensor_model,
-                "altitude above ground": self.get_altitude_above_ground,
-                "accuracy": self.get_accuracy,
-                "attribution text": self.get_attribution_text
-            }
+        self.attributes = {
+            "friendly name": "OpenSense {0}".format(self.measurand),
+            "id": self.id,
+            "position": "{0}; {1}".format(self.get_latitude, self.get_longitude),
+            "sensor model": self.get_sensor_model,
+            "altitude above ground": self.get_altitude_above_ground,
+            "accuracy": self.get_accuracy,
+            "attribution text": self.get_attribution_text
+        }
 
     @property
     def get_id(self):
@@ -180,7 +172,10 @@ def get_sensors_for_given_measurands(measurands, lat, lon):
 
 def set_states_for_given_sensors(sensors, hass):
     for sensor in sensors:
-        hass.states.set("OpenSense.{0}".format(sensor.get_measurand), "%.2f" % sensor.get_value +
+        if sensor.get_id == -1:
+            hass.states.set("OpenSense.{0}".format(sensor.get_measurand), sensor.get_value, sensor.get_attributes)
+        else:
+            hass.states.set("OpenSense.{0}".format(sensor.get_measurand), "%.2f" % sensor.get_value +
                         " {0}".format(sensor.get_unit), sensor.get_attributes)
 
 
