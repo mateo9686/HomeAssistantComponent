@@ -1,6 +1,4 @@
 import logging
-import math
-
 import voluptuous as vol
 import homeassistant.helpers.config_validation as cv
 import requests
@@ -11,13 +9,13 @@ import time
 _LOGGER = logging.getLogger(__name__)
 
 # Domain and component constants and validation
-# DOMAIN = 'open'
 DOMAIN = 'open_sense'
 CONF_USERNAME = "username"
 CONF_PASSWORD = "password"
 CONF_LAT = "latitude"
 CONF_LON = "longitude"
 CONF_MEASURANDS = "measurands"
+CONF_TOKEN = "token"
 
 CONFIG_SCHEMA = vol.Schema({
     DOMAIN: vol.Schema({
@@ -26,6 +24,7 @@ CONFIG_SCHEMA = vol.Schema({
         vol.Required(CONF_LAT): cv.latitude,
         vol.Required(CONF_LON): cv.longitude,
         vol.Required(CONF_MEASURANDS): cv.string,
+        vol.Required(CONF_TOKEN): cv.string,
     }),
 }, extra=vol.ALLOW_EXTRA)
 
@@ -40,6 +39,7 @@ def setup(hass, config):
     lat = config.get(CONF_LAT)
     lon = config.get(CONF_LON)
     measurands = config.get(CONF_MEASURANDS)
+    token = config.get(CONF_TOKEN)
 
     # Attempt to login
     """api_key = get_api_key()
@@ -47,35 +47,60 @@ def setup(hass, config):
         _LOGGER.error("OpenSense login failed.")
         return False"""
     if measurands == "all":
-        set_states_for_all_measurands(lat, lon, hass)
+        sensors = get_sensors_for_all_measurands(lat, lon)
     else:
-        set_states_for_given_measurands(measurands, lat, lon, hass)
+        sensors = get_sensors_for_given_measurands(measurands, lat, lon)
+        #set_states_for_given_measurands(measurands, lat, lon, hass)
+
+    set_states_for_given_sensors(sensors, hass)
 
     return True
 
 
 class Sensor:
 
-    def __init__(self, id):
+    def __init__(self, id, measurand):
         """Initialize the sensor"""
         self.id = id
-        link = "https://www.opensense.network/progprak/beta/api/v1.0/sensors/{0}".format(id)
-        r = requests.get(link)
-        data = r.json()
-        self.name = data['name']
-        self.measurand = data['measurand']
-        self.latitude = data['location']['lat']
-        self.longitude = data['location']['lng']
-        self.altitude_above_ground = data['altitudeAboveGround']
-        self.sensor_model = data['sensorModel']
-        self.accuracy = data['accuracy']
-        self.attribution_text = data['attributionText']
-        self.value = get_last_value(id)
-
-
-    @property
-    def get_name(self):
-        return self.name
+        if id == -1:
+            self.measurand = measurand
+            self.latitude = ""
+            self.longitude = ""
+            self.altitude_above_ground = ""
+            self.sensor_model = ""
+            self.accuracy = ""
+            self.attribution_text = ""
+            self.value = "no sensors near"
+            self.unit = ""
+            self.attributes = {
+                "friendly name": "OpenSense.{0}".format(self.measurand),
+                "position": "{0}; {1}".format(self.get_latitude, self.get_longitude),
+                "sensor model": self.get_sensor_model,
+                "altitude above ground": self.get_altitude_above_ground,
+                "accuracy": self.get_accuracy,
+                "attribution text": self.get_attribution_text
+            }
+        else:
+            link = "https://www.opensense.network/progprak/beta/api/v1.0/sensors/{0}".format(id)
+            r = requests.get(link)
+            data = r.json()
+            self.measurand = measurand
+            self.latitude = data['location']['lat']
+            self.longitude = data['location']['lng']
+            self.altitude_above_ground = data['altitudeAboveGround']
+            self.sensor_model = data['sensorModel']
+            self.accuracy = data['accuracy']
+            self.attribution_text = data['attributionText']
+            self.value, self.unit = get_last_value(id)
+            self.attributes = {
+                "friendly name": "OpenSense.{0}".format(self.measurand),
+                "id": self.id,
+                "position": "{0}; {1}".format(self.get_latitude, self.get_longitude),
+                "sensor model": self.get_sensor_model,
+                "altitude above ground": self.get_altitude_above_ground,
+                "accuracy": self.get_accuracy,
+                "attribution text": self.get_attribution_text
+            }
 
     @property
     def get_id(self):
@@ -113,34 +138,50 @@ class Sensor:
     def get_attribution_text(self):
         return self.attribution_text
 
+    @property
+    def get_unit(self):
+        return self.unit
 
-def set_states_for_given_measurands(measurands, lat, lon, hass):
-    measurands = measurands.replace(" ", "").split(',')
-
-    for measurand in measurands:
-        measurand_id = get_measurand_id_from_measurand_name(measurand)
-        sensor_id = get_id_of_closest_sensor(lat, lon, measurand_id)
-        if sensor_id == -1:
-            hass.states.set("openSense.{0}".format(measurand), "no sensors")
-        else:
-            value, unit = get_last_value(sensor_id)
-            hass.states.set("openSense.{0}".format(measurand), "%.2f" % value + " {0}".format(unit))
+    @property
+    def get_attributes(self):
+        return self.attributes
 
 
-def set_states_for_all_measurands(lat, lon, hass):
+def get_sensors_for_all_measurands(lat, lon):
     link = "https://www.opensense.network/progprak/beta/api/v1.0/measurands"
     r = requests.get(link)
     data = r.json()
     number_of_measurands = len(data)
+    sensors = []
     for i in range(number_of_measurands):
         measurand_id = i + 1
-        measurand = get_measurand_name_from_measurand_id(measurand_id)
+        measurand_name = get_measurand_name_from_measurand_id(measurand_id)
         sensor_id = get_id_of_closest_sensor(lat, lon, measurand_id)
         if sensor_id == -1:
-            hass.states.set("openSense.{0}".format(measurand), "no sensors")
+            sensors.append(Sensor(sensor_id, measurand_name))
         else:
-            value, unit = get_last_value(sensor_id)
-            hass.states.set("openSense.{0}".format(measurand), "%.2f" % value + " {0}".format(unit))
+            sensors.append(Sensor(sensor_id, measurand_name))
+    return sensors
+
+
+def get_sensors_for_given_measurands(measurands, lat, lon):
+    measurands = measurands.replace(" ", "").split(',')
+
+    sensors = []
+    for measurand in measurands:
+        measurand_id = get_measurand_id_from_measurand_name(measurand)
+        sensor_id = get_id_of_closest_sensor(lat, lon, measurand_id)
+        if sensor_id == -1:
+            sensors.append(Sensor(sensor_id, measurand))
+        else:
+            sensors.append(Sensor(sensor_id, measurand))
+    return sensors
+
+
+def set_states_for_given_sensors(sensors, hass):
+    for sensor in sensors:
+        hass.states.set("OpenSense.{0}".format(sensor.get_measurand), "%.2f" % sensor.get_value +
+                        " {0}".format(sensor.get_unit), sensor.get_attributes)
 
 
 def find_closest_sensor(data, lat, lon):
