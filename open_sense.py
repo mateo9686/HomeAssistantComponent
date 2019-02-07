@@ -1,12 +1,18 @@
 import logging
+from datetime import datetime, timedelta
 import voluptuous as vol
 import homeassistant.helpers.config_validation as cv
 import requests
 import geopy.distance
 import datetime
 import time
+from homeassistant.helpers.event import track_time_interval
+from random import randint
 
 _LOGGER = logging.getLogger(__name__)
+
+MIN_TIME_BETWEEN_UPDATES = timedelta(seconds=30)
+
 
 # Domain and component constants and validation
 DOMAIN = 'open_sense'
@@ -47,21 +53,30 @@ def setup(hass, config):
         _LOGGER.error("OpenSense login failed.")
         return False"""
     if measurands == "all":
-        sensors = get_sensors_for_all_measurands(lat, lon)
+        sensors = get_sensors_for_all_measurands(lat, lon, hass)
     else:
-        sensors = get_sensors_for_given_measurands(measurands, lat, lon)
+        sensors = get_sensors_for_given_measurands(measurands, lat, lon, hass)
 
     for sensor in sensors:
-        sensor.set_state(hass)
+        sensor.set_state()
+
+
+    def refresh(event_time):
+        _LOGGER.debug("Updating...")
+        for sensor in sensors:
+            sensor.update()
+
+    track_time_interval(hass, refresh, MIN_TIME_BETWEEN_UPDATES)
 
     return True
 
 
 class Sensor:
 
-    def __init__(self, sensor_id, measurand):
+    def __init__(self, sensor_id, measurand, hass):
         """Initialize the sensor"""
         self.id = sensor_id
+        self.hass = hass
         if sensor_id == -1:
             self.measurand = measurand
             self.latitude = ""
@@ -72,11 +87,14 @@ class Sensor:
             self.attribution_text = ""
             self.value = "no sensors near"
             self.unit = ""
+            self.last_update = ""
+            self.attributes = {}
         else:
             link = "https://www.opensense.network/progprak/beta/api/v1.0/sensors/{0}".format(sensor_id)
             r = requests.get(link)
             data = r.json()
             self.measurand = measurand
+            self.last_update = OpenSense.get_timestamp(sensor_id)
             self.latitude = data['location']['lat']
             self.longitude = data['location']['lng']
             self.altitude_above_ground = data['altitudeAboveGround']
@@ -84,15 +102,15 @@ class Sensor:
             self.accuracy = data['accuracy']
             self.attribution_text = data['attributionText']
             self.value, self.unit = OpenSense.get_last_value(sensor_id)
-        self.attributes = {
-            "friendly name": "OpenSense {0}".format(self.measurand),
-            "id": self.id,
-            "position": "{0}; {1}".format(self.get_latitude, self.get_longitude),
-            "sensor model": self.get_sensor_model,
-            "altitude above ground": self.get_altitude_above_ground,
-            "accuracy": self.get_accuracy,
-            "attribution text": self.get_attribution_text
-        }
+            self.attributes = {
+                "friendly name": "OpenSense {0}".format(self.measurand),
+                "id": self.id,
+                "position": "{0}; {1}".format("%.2f" % self.get_latitude, "%.2f" % self.get_longitude),
+                "sensor model": self.get_sensor_model,
+                "altitude above ground": self.get_altitude_above_ground,
+                "accuracy": self.get_accuracy,
+                "attribution text": self.get_attribution_text
+            }
 
     @property
     def get_id(self):
@@ -138,12 +156,33 @@ class Sensor:
     def get_attributes(self):
         return self.attributes
 
-    def set_state(self, hass):
+    @property
+    def get_last_update(self):
+        return self.last_update
+
+    def set_state(self):
         if self.get_id == -1:
-            hass.states.set("OpenSense.{0}".format(self.get_measurand), self.get_value, self.get_attributes)
+            self.hass.states.set("OpenSense.{0}".format(self.get_measurand), self.get_value, self.get_attributes)
         else:
-            hass.states.set("OpenSense.{0}".format(self.get_measurand), "%.2f" % self.get_value +
-                            " {0}".format(self.get_unit), self.get_attributes)
+            self.hass.states.set("OpenSense.{0}".format(self.get_measurand), "{0} {1}".format("%.2f" % self.get_value,
+                                                                                         self.get_unit),
+                            self.get_attributes)
+
+    def update(self):
+        if self.get_id != -1:
+            self.last_update = OpenSense.get_timestamp(self.get_id)
+            self.value, self.unit = OpenSense.get_last_value(self.get_id)
+            #self.value = randint(0, 100)
+            self.attributes = {
+                "friendly name": "OpenSense {0}".format(self.measurand),
+                "id": self.id,
+                "position": "{0}; {1}".format("%.2f" % self.get_latitude, "%.2f" % self.get_longitude),
+                "sensor model": self.get_sensor_model,
+                "altitude above ground": self.get_altitude_above_ground,
+                "accuracy": self.get_accuracy,
+                "attribution text": self.get_attribution_text
+            }
+        self.set_state()
 
 
 class OpenSense:
@@ -320,8 +359,19 @@ class OpenSense:
         r = requests.post(link, headers=headers, json=message)
         return r.status_code
 
+    @staticmethod
+    def get_timestamp(sensor_id):
+        link = "https://www.opensense.network/progprak/beta/api/v1.0/sensors/{0}/values".format(sensor_id)
+        r = requests.get(link)
+        data = r.json()
+        last_index = len(data['values']) - 1
+        if last_index == -1:
+            return None, None
+        return data['values'][last_index]['timestamp']
 
-def get_sensors_for_all_measurands(lat, lon):
+
+
+def get_sensors_for_all_measurands(lat, lon, hass):
     link = "https://www.opensense.network/progprak/beta/api/v1.0/measurands"
     r = requests.get(link)
     data = r.json()
@@ -331,22 +381,19 @@ def get_sensors_for_all_measurands(lat, lon):
         measurand_id = i + 1
         measurand_name = OpenSense.get_measurand_name_from_measurand_id(measurand_id)
         sensor_id = OpenSense.get_id_of_closest_sensor(lat, lon, measurand_id)
-        if sensor_id == -1:
-            sensors.append(Sensor(sensor_id, measurand_name))
-        else:
-            sensors.append(Sensor(sensor_id, measurand_name))
+        sensors.append(Sensor(sensor_id, measurand_name, hass))
     return sensors
 
 
-def get_sensors_for_given_measurands(measurands, lat, lon):
+def get_sensors_for_given_measurands(measurands, lat, lon, hass):
     measurands = measurands.replace(" ", "").split(',')
 
     sensors = []
     for measurand in measurands:
         measurand_id = OpenSense.get_measurand_id_from_measurand_name(measurand)
         sensor_id = OpenSense.get_id_of_closest_sensor(lat, lon, measurand_id)
-        if sensor_id == -1:
-            sensors.append(Sensor(sensor_id, measurand))
-        else:
-            sensors.append(Sensor(sensor_id, measurand))
+        sensors.append(Sensor(sensor_id, measurand, hass))
     return sensors
+
+
+print(OpenSense.get_api_key())
